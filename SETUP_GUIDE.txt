@@ -1,0 +1,126 @@
+================================================================
+  SMART WASTE SORTING BIN - SETUP & USAGE GUIDE
+================================================================
+
+WHAT THIS PROJECT DOES
+----------------------
+An automated waste sorting bin using an ESP32 microcontroller.
+It detects waste type using sensors and sorts it into two bins:
+  - Paper (biodegradable) → left flap (Servo 1)
+  - Plastic (non-biodegradable) → right flap (Servo 2)
+
+It has a web interface you can access from your phone to
+switch between automatic and manual mode, and view counters.
+
+
+HARDWARE YOU NEED
+-----------------
+1. ESP32 development board (e.g., ESP32 DevKit V1)
+2. 2x SG90 servo motors (or similar small servos)
+3. 1x Capacitive proximity sensor (digital output)
+4. 1x IR obstacle sensor (digital output)
+5. 1x Push button (optional, for manual trigger)
+6. Jumper wires
+7. 5V external power supply for servos (recommended)
+8. USB cable (micro-USB or USB-C depending on your ESP32)
+
+
+WIRING DIAGRAM
+--------------
+  ESP32 Pin    -->  Component
+  ---------         ---------
+  GPIO 21     -->   Capacitive sensor OUT (detects plastic)
+  GPIO 19     -->   IR sensor OUT (detects paper)
+  GPIO 4      -->   Push button (one side, other side to GND)
+  GPIO 13     -->   Servo 1 signal wire (paper flap)
+  GPIO 14     -->   Servo 2 signal wire (plastic flap)
+  3.3V        -->   Sensor VCC pins
+  GND         -->   All GND connections
+
+  IMPORTANT FOR SERVOS:
+  - Do NOT power servos from ESP32's 3.3V pin (not enough current)
+  - Use a separate 5V power supply for both servos
+  - Connect the servo power supply GND to ESP32 GND (common ground)
+  - Only connect the signal wire (usually orange/yellow) to ESP32
+
+
+HOW TO USE IT
+-------------
+
+1. Power on the ESP32 (via USB or external power)
+
+2. On your phone or laptop, look for WiFi network:
+   Name: SmartBin
+   Password: smartbin123
+
+3. Connect to that WiFi network
+
+4. Open a web browser and go to:
+   http://192.168.4.1
+
+5. You will see the Smart Bin Control page with:
+   - Current mode (Manual or Automatic)
+   - Buttons to switch modes
+   - A "Sort Item" button for manual web-based sorting
+   - Counters for biodegradable and non-biodegradable items
+
+MANUAL MODE:
+  - Place item in the bin opening
+  - Press the physical button OR tap "Sort Item" on the web page
+  - The sensors read the item and the correct flap opens
+
+AUTOMATIC MODE:
+  - Tap "Automatic Mode" on the web page
+  - The bin continuously monitors the sensors
+  - When an item is detected, it sorts automatically
+  - 2-second delay between sorts to prevent double-counting
+
+
+TROUBLESHOOTING
+---------------
+Problem: Servos don't move
+  -> Check wiring, especially signal pins (GPIO 13 and 14)
+  -> Use separate 5V power for servos, not ESP32's 3.3V
+  -> Check servo angles in code (servo1Home, servo1Left, etc.)
+
+Problem: Can't find "SmartBin" WiFi
+  -> Make sure ESP32 is powered and the code uploaded successfully
+  -> Open Serial Monitor (115200 baud) to see status messages
+  -> Try resetting the ESP32 (press EN/RST button)
+
+Problem: Sensors always detect / never detect
+  -> Check sensor wiring and power
+  -> Open Serial Monitor to see CAP and IR values
+  -> Adjust sensor sensitivity potentiometer (small screw on sensor)
+  -> Capacitive sensor: LOW = detected, HIGH = nothing
+  -> IR sensor: 0 = detected, 1 = nothing
+
+Problem: Wrong bin for item type
+  -> Swap sensor positions or swap pin numbers in code
+  -> Adjust servo angles (servo1Home, servo1Left, servo2Home, servo2Right)
+
+Problem: Upload fails
+  -> Hold BOOT button during upload
+  -> Try a different USB cable (some are charge-only)
+  -> Check that correct COM port is selected
+  -> Install CP210x or CH340 USB driver for your ESP32
+
+
+CALIBRATING SERVO ANGLES
+-------------------------
+The servo angles may need adjusting for your physical bin:
+  - servo1Home = 0    (paper flap closed position)
+  - servo1Left = 90   (paper flap open position)
+  - servo2Home = 90   (plastic flap closed position)
+  - servo2Right = 180  (plastic flap open position)
+
+Change these values at the top of IKADUHA.ino to match
+your bin's physical design. Upload again after changing.
+
+
+SENSOR LOGIC
+------------
+  Capacitive sensor LOW  = plastic/metal detected  -> right bin
+  IR sensor reading 0    = paper detected           -> left bin
+  Neither sensor active  = nothing detected         -> no action
+================================================================
