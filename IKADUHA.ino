@@ -54,13 +54,22 @@ unsigned long nonBioCount = 0;  // plastic count
 
 // ====== Pin assignments ======
 // Sensors
-const int capPin = 21;    // capacitive sensor digital output (LOW = detect)
-const int irPin = 19;     // IR sensor digital output (0 = detect)
+const int capPin = 21;    // capacitive sensor digital output
+const int irPin = 19;     // IR sensor digital output
 // Input button
 const int buttonPin = 4;  // optional physical pushbutton for manual trigger
 // Servo outputs
 const int servo1Pin = 13; // left flap servo (paper)
 const int servo2Pin = 14; // right flap servo (plastic)
+
+// ====== Sensor detect logic (IMPORTANT) ======
+// Iba-iba ang behavior ng sensor modules:
+// - Some modules: LOW = detect
+// - Others (e.g. some capacitive boards): HIGH = detect
+//
+// If laging wrong ang sorting, usually dito lang kailangan baguhin.
+const int CAP_DETECT_STATE = HIGH; // set to LOW if your capacitive sensor is active-LOW
+const int IR_DETECT_STATE = LOW;   // most IR obstacle sensors are active-LOW
 
 // ====== Servo angles (i calibrate based sa physical build) ======
 // Servo1 (left flap - paper)
@@ -87,6 +96,8 @@ void classifyAndSort(int capVal, int irVal);
 void sortPaper();
 void sortPlastic();
 void slowMoveServo(Servo &s, int &currentAngle, int targetAngle);
+bool isCapDetected(int capVal);
+bool isIrDetected(int irVal);
 String htmlPage();
 
 // ====== Web page template ======
@@ -114,6 +125,11 @@ void setup() {
   pinMode(capPin, INPUT_PULLUP);
   pinMode(irPin, INPUT);
   pinMode(buttonPin, INPUT_PULLUP);
+
+  Serial.print("CAP_DETECT_STATE: ");
+  Serial.println(CAP_DETECT_STATE == HIGH ? "HIGH" : "LOW");
+  Serial.print("IR_DETECT_STATE: ");
+  Serial.println(IR_DETECT_STATE == HIGH ? "HIGH" : "LOW");
 
   // Servo setup
   servo1.setPeriodHertz(50);
@@ -173,8 +189,7 @@ void loop() {
   server.handleClient();
 
   // read current sensor state
-  // capVal: LOW means detected
-  // irVal: 0 means detected
+  // Detection is based on CAP_DETECT_STATE / IR_DETECT_STATE config above.
   int capVal = digitalRead(capPin);
   int irVal = digitalRead(irPin);
 
@@ -189,7 +204,7 @@ void loop() {
   // ====== Automatic mode behavior ======
   // Mag-sort lang kung may actual sensor detection.
   if (autoMode) {
-    if (capVal == LOW || irVal == 0) {
+    if (isCapDetected(capVal) || isIrDetected(irVal)) {
       classifyAndSort(capVal, irVal);
       delay(2000); // delay para hindi sunod-sunod ang count/sort
     }
@@ -198,8 +213,8 @@ void loop() {
 
 // ====== Core decision logic ======
 // Decision order:
-// 1) Capacitive detected (LOW) -> treat as plastic
-// 2) Else if IR detected (0)    -> treat as paper
+// 1) Capacitive detected -> treat as plastic
+// 2) Else if IR detected -> treat as paper
 // 3) Else                       -> no item, skip
 void classifyAndSort(int capVal, int irVal) {
   Serial.print("CAP: ");
@@ -207,12 +222,12 @@ void classifyAndSort(int capVal, int irVal) {
   Serial.print(" | IR: ");
   Serial.println(irVal);
 
-  if (capVal == LOW) {
+  if (isCapDetected(capVal)) {
     Serial.println("Plastic detected -> Servo2 (right)");
     sortPlastic();
     nonBioCount++;
   } else {
-    if (irVal == 0) {
+    if (isIrDetected(irVal)) {
       Serial.println("Paper detected -> Servo1 (left)");
       sortPaper();
       bioCount++;
@@ -221,6 +236,14 @@ void classifyAndSort(int capVal, int irVal) {
       return;
     }
   }
+}
+
+bool isCapDetected(int capVal) {
+  return capVal == CAP_DETECT_STATE;
+}
+
+bool isIrDetected(int irVal) {
+  return irVal == IR_DETECT_STATE;
 }
 
 // ====== Smooth servo movement helper ======
