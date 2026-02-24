@@ -47,6 +47,7 @@ WebServer server(80);
 // false = Manual mode
 // true  = Automatic mode
 bool autoMode = false;
+bool prevAutoMode = false;
 
 // Counters na pinapakita sa web UI
 unsigned long bioCount = 0;     // paper count
@@ -71,6 +72,11 @@ const int servo2Pin = 14; // right flap servo (plastic)
 const int CAP_DETECT_STATE = HIGH; // set to LOW if your capacitive sensor is active-LOW
 const int IR_DETECT_STATE = LOW;   // most IR obstacle sensors are active-LOW
 
+// ====== Auto mode anti-false-trigger settings ======
+// Goal: iwas tuloy-tuloy na sort kapag "stuck detected" ang sensor.
+const unsigned long DETECT_STABLE_MS = 120;   // detection must stay true this long
+const unsigned long AUTO_COOLDOWN_MS = 2000;  // minimum gap between auto sorts
+
 // ====== Servo angles (i calibrate based sa physical build) ======
 // Servo1 (left flap - paper)
 int servo1Home = 0;
@@ -91,6 +97,11 @@ Servo servo2;
 int servo1Current = servo1Home;
 int servo2Current = servo2Home;
 
+// Auto mode state trackers
+bool autoTriggerLatched = false;    // true = wait muna ng clear state bago next sort
+unsigned long detectStartMs = 0;    // start time ng current detect window
+unsigned long lastAutoSortMs = 0;   // last auto sort timestamp
+
 // ====== Function prototypes ======
 void classifyAndSort(int capVal, int irVal);
 void sortPaper();
@@ -98,6 +109,8 @@ void sortPlastic();
 void slowMoveServo(Servo &s, int &currentAngle, int targetAngle);
 bool isCapDetected(int capVal);
 bool isIrDetected(int irVal);
+bool isAnyDetected(int capVal, int irVal);
+bool isSingleSensorDetected(int capVal, int irVal);
 String htmlPage();
 
 // ====== Web page template ======
@@ -192,6 +205,25 @@ void loop() {
   // Detection is based on CAP_DETECT_STATE / IR_DETECT_STATE config above.
   int capVal = digitalRead(capPin);
   int irVal = digitalRead(irPin);
+  bool capDetected = isCapDetected(capVal);
+  bool irDetected = isIrDetected(irVal);
+  bool singleDetected = isSingleSensorDetected(capVal, irVal);
+  bool anyDetected = isAnyDetected(capVal, irVal);
+
+  // Track mode transition para ma-arm ng tama ang automatic mode.
+  if (autoMode && !prevAutoMode) {
+    // Kapag pagpasok ng auto mode ay detected na agad, huwag munang mag-sort.
+    // Hintayin munang mag-clear then new detect event.
+    autoTriggerLatched = anyDetected;
+    detectStartMs = anyDetected ? millis() : 0;
+    Serial.println(anyDetected
+      ? "Auto mode ON: sensor already detected, waiting for clear state."
+      : "Auto mode ON: armed.");
+  } else if (!autoMode && prevAutoMode) {
+    autoTriggerLatched = false;
+    detectStartMs = 0;
+  }
+  prevAutoMode = autoMode;
 
   // ====== Manual mode behavior ======
   // Sa manual mode, sorting only happens kapag pinindot ang physical button.
@@ -202,13 +234,43 @@ void loop() {
   }
 
   // ====== Automatic mode behavior ======
-  // Mag-sort lang kung may actual sensor detection.
+  // Mag-sort lang sa NEW + STABLE detection, then wait for clear state.
+  // IMPORTANT: auto-sort only works when EXACTLY ONE sensor is active.
+  // If both sensors are active, ambiguous state siya (skip).
   if (autoMode) {
-    if (isCapDetected(capVal) || isIrDetected(irVal)) {
-      classifyAndSort(capVal, irVal);
-      delay(2000); // delay para hindi sunod-sunod ang count/sort
+    if (!singleDetected) {
+      autoTriggerLatched = false;
+      detectStartMs = 0;
+      if (capDetected && irDetected) {
+        // Both active usually means mounting/reflection issue (e.g., sensor seeing plywood/hole).
+        // Skip sorting to avoid wrong flap movement.
+        delay(50);
+      }
+    } else {
+      if (detectStartMs == 0) {
+        detectStartMs = millis();
+      }
+
+      bool stableDetect = (millis() - detectStartMs) >= DETECT_STABLE_MS;
+      bool cooldownDone = (millis() - lastAutoSortMs) >= AUTO_COOLDOWN_MS;
+
+      if (!autoTriggerLatched && stableDetect && cooldownDone) {
+        classifyAndSort(capVal, irVal);
+        lastAutoSortMs = millis();
+        autoTriggerLatched = true; // require clear state before next auto sort
+      }
     }
   }
+}
+
+bool isAnyDetected(int capVal, int irVal) {
+  return isCapDetected(capVal) || isIrDetected(irVal);
+}
+
+bool isSingleSensorDetected(int capVal, int irVal) {
+  bool capDetected = isCapDetected(capVal);
+  bool irDetected = isIrDetected(irVal);
+  return capDetected ^ irDetected;
 }
 
 // ====== Core decision logic ======
@@ -217,17 +279,25 @@ void loop() {
 // 2) Else if IR detected -> treat as paper
 // 3) Else                       -> no item, skip
 void classifyAndSort(int capVal, int irVal) {
+  bool capDetected = isCapDetected(capVal);
+  bool irDetected = isIrDetected(irVal);
+
   Serial.print("CAP: ");
   Serial.print(capVal);
   Serial.print(" | IR: ");
   Serial.println(irVal);
 
-  if (isCapDetected(capVal)) {
+  if (capDetected && irDetected) {
+    Serial.println("Ambiguous: BOTH sensors active. Skipping sort.");
+    return;
+  }
+
+  if (capDetected) {
     Serial.println("Plastic detected -> Servo2 (right)");
     sortPlastic();
     nonBioCount++;
   } else {
-    if (isIrDetected(irVal)) {
+    if (irDetected) {
       Serial.println("Paper detected -> Servo1 (left)");
       sortPaper();
       bioCount++;
