@@ -69,7 +69,7 @@ const int servo2Pin = 14; // right flap servo (plastic)
 // - Others (e.g. some capacitive boards): HIGH = detect
 //
 // If laging wrong ang sorting, usually dito lang kailangan baguhin.
-const int CAP_DETECT_STATE = HIGH; // set to LOW if your capacitive sensor is active-LOW
+const int CAP_DETECT_STATE = LOW;  // most capacitive modules used in this project are active-LOW
 const int IR_DETECT_STATE = LOW;   // most IR obstacle sensors are active-LOW
 
 // ====== Auto mode anti-false-trigger settings ======
@@ -143,6 +143,8 @@ void setup() {
   Serial.println(CAP_DETECT_STATE == HIGH ? "HIGH" : "LOW");
   Serial.print("IR_DETECT_STATE: ");
   Serial.println(IR_DETECT_STATE == HIGH ? "HIGH" : "LOW");
+  Serial.println("Expected idle state: CAP=HIGH, IR=HIGH (or 1).");
+  Serial.println("If CAP stays LOW while no item is present, check cap sensor wiring/sensitivity.");
 
   // Servo setup
   servo1.setPeriodHertz(50);
